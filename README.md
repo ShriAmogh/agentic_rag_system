@@ -1,158 +1,182 @@
-**Pahse 1 : Data Scraping**
-scraper/scraper.py
+Phase 1: Data Scraping
 
-This script scrapes 50 academic research papers and stores them in a structured JSON format.
+Location: scraper/scraper.py
+
+Scrapes 50 academic research papers
+
+Stores results in a structured JSON format
 
 Output
 
-   data/cscl_dataset.json
-   
-   Each paper includes:
-   
-   paper_id
-   
-   title
-   
-   abstract
-   
-   authors
-   
-   submission_date
-   
-   content
-   
-   refrences
-   
-   RUN : 
-   python scraper/scraper.py
+data/cscl_dataset.json
 
-**Phase 2: Data Ingestion & Vectorization**
-   data_ingestion/ingestion.py
-   
-   This script:
-   
-   Loads the scraped JSON dataset
-   
-   Chunks long papers
-   
-   Generates embeddings using sentence-transformers
-   
-   Stores vectors in ChromaDB (persistent) with their metadata attached for hard constraints filtering.
-   
-   Key Features
-   
-   Chunking with overlap
-   
-   Deterministic chunk IDs
-   
-   Metadata preservation
-   
-   Persistent storage
-   
-   Output
-   
-   Embedded vectors stored in chroma_store/
-   
-   Run
-   python data_ingestion/ingestion.py
+Each paper includes:
 
-**Phase 3: Hybrid RAG + Agentic Workflow**
-   run.py
-   
-   This is the main execution entrypoint.
-   
-   What it does:
-   
-   Accepts a research query
-   
-   Performs semantic search using ChromaDB
-   
-   Retrieves the most relevant paper
-   
-   Runs an agentic self-correction workflow to generate a validated summary
-   
-   Run
-   python run.py
-   
-   Agentic Workflow (Core Innovation)
-   
-   The agentic system ensures structured, reliable outputs using multiple cooperating agents.
-   
-   AgenticController (Orchestrator)
-   agents/controller.py
-   
-   The controller:
-   
-   Orchestrates agent interactions
-   
-   Enforces retry logic
-   
-   Feeds validation errors back to the generator
-   
-   Terminates safely after 3 failed attempts
-   
-   Responsibilities
-   
-   Retry loop (max 3 attempts)
-   
-   Error propagation
-   
-   Final success/failure decision
-   
-   JSONCreatorAgent (Generator)
-    agents/json_creator.py
-   
-   Uses Google Gemini (google-genai) to generate a structured JSON summary.
-   
-   Output Schema
-   {
-     "title": "string",
-     "summary": "string",
-     "complexity_score": 1-10,
-     "future_work": "string"
-   }
-   
-   Constraints
-   
-   JSON only
-   
-   No markdown
-   
-   No explanations
-   
-    ValidatorAgent (Verifier)
-    agents/validator.py
-   
-   Validates LLM output using:
-   
-   json.loads (syntax validation)
-   
-   Pydantic schema enforcement
-   
-   Failure Handling
-   
-   Missing fields
-   
-   Wrong data types
-   
-   Invalid ranges
-   
-   Empty responses
-   
-   Errors are fed back to the generator for self-correction.
-   
-   Schema Definition
-   agents/schema.py
-   class PaperSummary(BaseModel):
-       title: str
-       summary: str
-       complexity_score: int = Field(ge=1, le=10)
-       future_work: str
-   
-   Self-Correction Loop
-   Attempt 1 → Generate JSON → Validate → Fail
-             ↓
-   Error Feedback → Generate Again → Validate → Success
+paper_id
 
+title
 
-If all 3 attempts fail → graceful termination with error.
+abstract
+
+authors
+
+submission_date
+
+content
+
+references
+
+Run
+python scraper/scraper.py
+
+Phase 2: Data Ingestion & Vectorization
+
+Location: data_ingestion/ingestion.py
+
+Description
+
+Loads the scraped JSON dataset
+
+Splits long papers into overlapping chunks
+
+Generates embeddings using sentence-transformers
+
+Stores vectors in ChromaDB with metadata for hard-constraint filtering
+
+Key Features
+
+Chunking with overlap
+
+Deterministic chunk IDs
+
+Metadata preservation
+
+Persistent vector storage
+
+Output
+
+Embedded vectors stored in chroma_store/
+
+Run
+python data_ingestion/ingestion.py
+
+Phase 3: Hybrid RAG + Agentic Workflow
+
+Location: run.py
+
+Description
+
+Acts as the main execution entrypoint
+
+Integrates retrieval with agentic reasoning
+
+Workflow
+
+Accepts a research query
+
+Performs semantic search using ChromaDB
+
+Retrieves the most relevant paper
+
+Executes an agentic self-correction workflow to generate a validated summary
+
+Run
+python run.py
+
+Agentic Workflow (Core Innovation)
+
+The agentic system ensures structured, reliable outputs using multiple cooperating agents with validation and retry logic.
+
+AgenticController (Orchestrator)
+
+Location: agents/controller.py
+
+Responsibilities
+
+Orchestrates interactions between agents
+
+Enforces retry logic (maximum 3 attempts)
+
+Feeds validation errors back to the generator
+
+Makes final success or failure decision
+
+JSONCreatorAgent (Generator)
+
+Location: agents/json_creator.py
+
+Description
+
+Uses Google Gemini (google-genai)
+
+Generates a structured JSON summary of the retrieved paper
+
+Output Schema
+{
+  "title": "string",
+  "summary": "string",
+  "complexity_score": 1-10,
+  "future_work": "string"
+}
+
+Constraints
+
+JSON output only
+
+No markdown
+
+No explanations or additional text
+
+ValidatorAgent (Verifier)
+
+Location: agents/validator.py
+
+Validation Methods
+
+json.loads for syntax validation
+
+Pydantic schema enforcement
+
+Failure Handling
+
+Missing required fields
+
+Incorrect data types
+
+Invalid value ranges
+
+Empty or null responses
+
+Validation errors are automatically fed back to the generator for correction
+
+Schema Definition
+
+Location: agents/schema.py
+
+class PaperSummary(BaseModel):
+    title: str
+    summary: str
+    complexity_score: int = Field(ge=1, le=10)
+    future_work: str
+
+Self-Correction Loop
+
+Attempt 1
+
+Generate JSON
+
+Validate
+
+Fail
+
+Error feedback passed to generator
+
+Attempt 2 / 3
+
+Regenerate JSON
+
+Revalidate
+
+On success: return validated structured output
+
+After 3 failures: graceful termination with error
