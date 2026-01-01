@@ -27,7 +27,6 @@ class AgenticController:
 
             try:
                 validated = self.validator.validate(raw_output)
-                print("=========== Validation succeeded===========")
                 return validated
 
             except Exception as e:

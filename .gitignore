@@ -1,6 +1,7 @@
 .env
 data/cscl_pdfs/
 __pychache__/
+__pychache__/*
 .venv/
 agents/__pychache__/*
 chroma_store/

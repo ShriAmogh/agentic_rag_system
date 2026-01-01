@@ -7,3 +7,4 @@ chromadb
 numpy
 datasets
 google-genai
+pydantic
