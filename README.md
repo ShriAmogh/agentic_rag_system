@@ -324,12 +324,12 @@ Why This Architecture Works
     Scales to research-grade workloads
 
 Future Enhancements
-Adaptive BM25–Dense weighting
+    Adaptive BM25–Dense weighting
 
-Multi-document synthesis
+    Multi-document synthesis
 
-Retrieval evaluation metrics (Recall@K, MRR)
+    Retrieval evaluation metrics (Recall@K, MRR)
 
-Streaming and async inference
+    Streaming and async inference
 
-Production deployment (API + Docker)
+    Production deployment (API + Docker)
