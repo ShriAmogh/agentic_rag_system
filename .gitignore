@@ -1,11 +1,14 @@
 .env
-data/cscl_pdfs/
-__pychache__/
-__pychache__/*
 .venv/
-agents/__pychache__/*
+__pycache__/
+__pycache__/*
+*/__pycache__/*
 chroma_store/
+data/cscl_pdfs/
 data/arXiv-2508.19205v1.tar.gz
-rag/__pychache__/
-langgraph_agents/__pychache__/
-testing_gemini__pycache__/
+testing_gemini
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+.DS_Store
