@@ -7,7 +7,7 @@ load_dotenv()
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 class JSONCreatorAgent:
-    def __init__(self, model="gemini-2.5-flash"):
+    def __init__(self, model="gemini-3.1-flash-lite"):
         self.client = client
         self.model = model
 
