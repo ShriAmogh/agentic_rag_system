@@ -1,199 +1,138 @@
-# Hybrid Agentic RAG System for Academic Paper Intelligence
+# Research Explorer (Hybrid Multi-Agent RAG System)
 
-This repository implements a **query-aware, agent-driven Hybrid Retrieval-Augmented Generation (RAG) system** for academic research papers.
+This repository implements a **query-aware, agent-driven Hybrid Retrieval-Augmented Generation (RAG) system** for academic research papers, complete with a React frontend and a FastAPI backend.
 
-Unlike naive RAG systems that directly embed the raw user query, this system first **interprets the query using an agent**, extracting **intent, keywords, and temporal constraints**. These signals are then used to drive a **BM25-first lexical search**, followed by **dense semantic retrieval**, **cross-encoder re-ranking**, and a **LangGraph-based agentic self-correction workflow** to guarantee schema-safe structured outputs.
-
----
-
-## Core Design Principles
-
-- **Query Interpretation:** Decouple raw queries from vector search by extracting structured filters and intents first.
-- **Hybrid Search:** Combine BM25 lexical search (critical for keyword and date-based constraints) with dense semantic search (for conceptual recall).
-- **Reranking:** Leverage cross-encoders to evaluate absolute relevance of candidates.
-- **Agentic Validation:** Keep LLMs in a self-correcting validation loop until Pydantic schema validation succeeds.
-- **Deterministic Execution:** Maintain controlled state transitions using LangGraph.
+Unlike naive RAG systems that directly embed the raw user query, this system first **interprets the query using an agent**, extracting intent, keywords, and temporal constraints. These signals are then used to drive a **BM25-first lexical search**, followed by **dense semantic retrieval**, **cross-encoder re-ranking**, and a **LangGraph-based multi-agent workflow** to guarantee schema-safe structured outputs and provide deep literature reviews.
 
 ---
 
-## Project Structure
+## 🌟 Core Design Principles & RAG Architecture
+
+### 1. Query Interpretation
+Before searching the vector database, the raw user query is processed by a **Dynamic Date Extraction Agent** to identify:
+- Real core intent & target keywords.
+- Temporal bounds (e.g., "papers published after 2025", "recent advancements").
+- Structured filters for the retrieval stage.
+
+### 2. Hybrid Retrieval Pipeline
+1. **BM25 Lexical Retrieval (Primary Filter):** Focuses on strict keyword matching and date string prefix filtering. Ensures temporal constraints are respected.
+2. **Dense Vector Retrieval (Bi-Encoder):** Searches ChromaDB using cosine similarity to guarantee high semantic recall.
+3. **Cross-Encoder Re-Ranking:** Re-ranks the top retrieved candidates using `cross-encoder/ms-marco-MiniLM-L-6-v2` to evaluate absolute relevance, selecting the most contextually relevant chunks.
+
+### 3. LangGraph Multi-Agent Workflows
+Once the best context is retrieved, the system uses a LangGraph control loop to guarantee structured, valid schema outputs, driven by specialized agents:
+- **Summarization & Validation Agent:** Generates strict Pydantic JSON summaries and automatically self-corrects if the output schema is invalid (Max attempts = 3).
+- **ComparativeAgent (Literature Review):** When discovering multiple relevant candidate papers, this agent synthesizes a side-by-side matrix comparing methodologies, strengths, limitations, and compute overheads.
+- **AuditAgent (Fact-Checker):** Every generated summary and comparative review is passed through a factual grounding auditor that computes a **Hallucination Score (0-100%)** by cross-referencing generated claims against the raw retrieved ChromaDB chunks.
+
+### 4. Interactive Live UI & PDF Ingestion
+- **Live PDF Ingestion:** A UI modal that allows users to upload custom PDF research papers on the fly, automatically chunking, embedding, and syncing them to the vector store.
+- **React Frontend:** A sleek, user-friendly interface to search for papers, view side-by-side comparisons, interact via multi-turn chat, and monitor live audit validation scores.
+
+---
+
+## 🏗️ Project Structure
 
 ```
-├── scraper/
-│   └── scraper.py              # Academic paper scraping & normalization
+├── frontend/                   # React (Vite) Web Application
+│   ├── src/components/         # UI Components (ComparativeMatrix, SummaryCard, etc.)
+│   └── src/App.jsx             # Main Application Logic
 │
-├── data/
-│   └── cscl_dataset.json       # Structured raw dataset of papers
-│
-├── data_ingestion/
-│   └── ingestion.py            # Text chunking, embedding generation & storage
-│
-├── chroma_store/               # Persistent on-disk vector database (ignored in git)
-│
-├── langgraph_agents/           # LangGraph-based workflow
-│   ├── __init__.py
-│   ├── agents.py               # RAG, Generator, and Evaluator agents/nodes
-│   ├── graph.py                # Graph building and routing configuration
-│   ├── graphstate.py           # State definition passed across nodes
-│   ├── prompts.py              # Centralized system and correction prompts
+├── langgraph_agents/           # Multi-Agent State Machine Workflow
+│   ├── agents.py               # RAG, Generator, Comparative, and Audit Agents
+│   ├── graph.py                # LangGraph routing and compilation
+│   ├── graphstate.py           # State typing passed across nodes
+│   ├── prompts.py              # Centralized system prompts
 │   └── schema.py               # Pydantic structured output models
 │
-├── agents/                     # Traditional pipeline components
-│   ├── controller.py           # Plain loops-based orchestrator
-│   ├── json_creator.py         # JSON creation LLM interface
-│   ├── validator.py            # Output validator helper
-│   └── schema.py               # Pydantic schema definition
+├── data_ingestion/             # Text chunking, embedding & ChromaDB storage
+├── rag/                        # Hybrid search logic (BM25 + Dense + Reranker)
+├── scraper/                    # Academic paper scraping & normalization
 │
-├── langgraph_run.py            # Entry point for LangGraph pipeline
-├── run.py                      # Entry point for traditional pipeline
-├── requirements.txt            # Python dependencies
-└── utils.py                    # Utility functions and shared helpers
+├── server.py                   # FastAPI Backend Server
+├── langgraph_run.py            # CLI entry point for testing the LangGraph pipeline
+└── requirements.txt            # Python dependencies
 ```
 
 ---
 
-## High-Level System Flow
+## 🧠 LangGraph State Machine Flow
 
 ```mermaid
 graph TD
-    UserQuery[User Query] --> QI[Query Interpreter Agent]
-    QI --> FilterDate[Extract Context & Date Constraints]
-    FilterDate --> BM25[BM25 Lexical Retrieval]
-    BM25 --> Vector[Dense Vector Retrieval]
-    Vector --> Rerank[Cross-Encoder Re-Ranking]
-    Rerank --> Select[Best Chunk Selection]
-    Select --> Agentic[LangGraph Self-Correction Loop]
-    Agentic --> Final[Validated Structured JSON Output]
+    Entry([User Request]) --> Router{Mode Router}
+    
+    Router -- mode: compare --> Comp[ComparativeAgent Node]
+    Comp --> Audit[AuditAgent Node]
+    
+    Router -- mode: discover / chat --> RAG[RAG Retrieval Node]
+    RAG --> Gen[JSON Generator Node]
+    Gen --> Eval{Pydantic Schema Evaluator}
+    
+    Eval -- Pass / Retries Exceeded --> Audit
+    Eval -- Fail & Attempts < 3 --> Gen
+    
+    Audit --> End([Final Validated Response])
 ```
 
 ---
 
-## System Components
+## 🚀 Getting Started
 
-### 1. Data Scraping
-**Location:** [scraper/scraper.py](file:///Users/amogharora/agentic_rag_system/agentic_rag_system/scraper/scraper.py)
+### 1. Prerequisites & Environment
+Ensure you have Python 3.11+ and Node.js installed. Create a `.env` file in the root directory with your Google Gemini API key:
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+```
+*(The system is currently configured to use **Gemini 3.1 Flash Lite** and **Gemini 3 Pro Preview** via Google's `genai` SDK and LangChain).*
 
-- Scrapes **50 academic research papers** in the domain.
-- Extracts key metadata and raw content.
-- Normalizes output into a structured dataset: `data/cscl_dataset.json`.
-
-**Paper schema:**
-- `paper_id`
-- `title`
-- `abstract`
-- `authors`
-- `submission_date`
-- `content`
-- `references`
-
-**Run Command:**
+### 2. Backend Setup
+Install Python dependencies, perform initial ingestion, and start the FastAPI server:
 ```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# (Optional) Run initial data scraping and ingestion
 python scraper/scraper.py
-```
-
----
-
-### 2. Data Ingestion & Vectorization
-**Location:** [data_ingestion/ingestion.py](file:///Users/amogharora/agentic_rag_system/agentic_rag_system/data_ingestion/ingestion.py)
-
-- Loads the scraped dataset.
-- Splits long papers into overlapping chunks to preserve contextual boundaries.
-- Generates dense semantic embeddings using Sentence-Transformers (`all-MiniLM-L6-v2`).
-- Indexes chunks in `ChromaDB` alongside rich metadata (such as dates, title, and authors).
-
-**Run Command:**
-```bash
 python data_ingestion/ingestion.py
+
+# Run the FastAPI server (runs on port 8000)
+python server.py
 ```
 
----
-
-### 3. Query Interpretation Layer
-Before searching the vector database, the raw user query is processed by a **Query Interpreter Agent** to identify:
-- Real core intent & target keywords.
-- Temporal bounds (e.g., "published after 2021", "recent advancements").
-- Structured filters for the retrieval stage.
-
----
-
-### 4. Hybrid Retrieval Pipeline
-1. **BM25 Lexical Retrieval (Primary Filter):** Focuses on strict keyword matching and date filters. Ensures constraints are respected.
-2. **Dense Vector Retrieval (Bi-Encoder):** Searches ChromaDB using cosine similarity to guarantee high semantic recall.
-3. **Cross-Encoder Re-Ranking:** Re-ranks the top 20 retrieved candidates using `cross-encoder/ms-marco-MiniLM-L-6-v2` to select the single highest-scoring chunk.
-
----
-
-### 5. LangGraph Agentic Workflow
-Once the best context is retrieved, the system uses a LangGraph control loop to guarantee structured, valid schema outputs.
-
-```mermaid
-stateDiagram-v2
-    [*] --> RAG_Agent
-    RAG_Agent --> Generator_Agent
-    Generator_Agent --> Evaluator_Agent
-    Evaluator_Agent --> Route_Check
-    Route_Check --> [*] : Valid Output / Max Attempts Exceeded
-    Route_Check --> Generator_Agent : Invalid Output (Self-Correct)
+### 3. Frontend Setup
+In a new terminal window, install npm packages and start the Vite dev server:
+```bash
+cd frontend
+npm install
+npm run dev
 ```
-
-#### Shared Graph State (`graphstate.py`)
-- `query`: User search topic
-- `date`: Extracted temporal constraints
-- `rag_results`: List of retrieved documents
-- `rag_context`: Best combined text content
-- `generated_json`: Candidate output dict
-- `evaluation_errors`: List of validation errors, if any
-- `attempts`: Counter tracking retries (Max = 3)
-
-#### Execution Nodes (`agents.py`)
-- **RAG Agent:** Performs hybrid query execution.
-- **Generator Agent:** Leverages LLM to create schema-conforming response.
-- **Evaluator Agent:** Validates output structures against the Pydantic schema.
+Navigate to **http://localhost:5173** to use the Web UI.
 
 ---
 
-### 6. Structured Output Schema
-Outputs strictly adhere to the following structure:
-```json
-{
-  "title": "string",
-  "summary": "string",
-  "complexity_score": 1-10,
-  "future_work": "string"
-}
+## 🛠️ Execution & Testing (CLI)
+
+If you prefer to run evaluations or tests from the command line without the UI, you can use the interactive LangGraph runner:
+
+```bash
+python langgraph_run.py
 ```
-
-> [!IMPORTANT]
-> The generator output must be pure JSON with no markdown wrapping, trailing strings, or conversational preambles.
-
----
-
-## Getting Started
-
-1. **Install Dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-2. **Configure Environment:**
-   Create a `.env` file and define your API keys:
-   ```env
-   GEMINI_API_KEY=your_gemini_api_key_here
-   ```
-3. **Execution Options:**
-   - Run the traditional controller-based workflow:
-     ```bash
-     python run.py
-     ```
-   - Run the LangGraph-based workflow:
-     ```bash
-     python langgraph_run.py
-     ```
+This CLI tool allows you to:
+1. Search and discover papers using the hybrid retriever.
+2. Select a paper to trigger the Agentic Validation Loop.
+3. Enter a multi-turn chat environment grounded in the selected paper.
 
 ---
 
-## Future Enhancements
-- [ ] Implement adaptive weight calibration between BM25 and Dense search models.
-- [ ] Add support for multi-document synthesis and cross-paper referencing.
-- [ ] Set up automated retrieval metrics tracking (Recall@K, MRR).
-- [ ] Integrate streaming and async execution for faster processing times.
-- [ ] Containerize application via Docker and expose REST APIs.
+## 🛡️ Model Robustness
+The system implements a resilient `call_llm_with_fallback` function inside `agents.py` to handle API `429 Resource Exhausted` rate-limits. If the primary model exceeds quota, the system automatically triggers an exponential backoff sleep before retrying.
+
+---
+
+## 🔮 Future Work
+- Implement automated retrieval metrics tracking (Recall@K, MRR) for the hybrid pipeline.
+- Add support for multi-document synthesis and cross-paper referencing inside the chat window.
+- Migrate from local ChromaDB to a cloud-hosted Vector DB for multi-tenant scaling.
+- Dockerize both the FastAPI backend and React frontend into a unified `docker-compose.yml`.
