@@ -2,95 +2,82 @@
 
 This repository implements a **query-aware, agent-driven Hybrid Retrieval-Augmented Generation (RAG) system** for academic research papers.
 
-Unlike naive RAG systems that directly embed the raw user query, this system first **interprets the query using an agent**, extracting **intent, keywords, and temporal constraints**.  
-These signals are then used to drive a **BM25-first lexical search**, followed by **dense semantic retrieval**, **cross-encoder re-ranking**, and a **LangGraph-based agentic self-correction workflow**.
-
-The goal is to achieve **high precision**, **temporal relevance**, and **schema-safe structured outputs**.
+Unlike naive RAG systems that directly embed the raw user query, this system first **interprets the query using an agent**, extracting **intent, keywords, and temporal constraints**. These signals are then used to drive a **BM25-first lexical search**, followed by **dense semantic retrieval**, **cross-encoder re-ranking**, and a **LangGraph-based agentic self-correction workflow** to guarantee schema-safe structured outputs.
 
 ---
 
 ## Core Design Principles
 
-- Query interpretation before retrieval
-- BM25 for hardcore lexical + date-based search
-- Dense embeddings for semantic recall
-- Cross-encoders for precision ranking
-- Agentic validation and retry logic
-- Deterministic, debuggable execution flow
+- **Query Interpretation:** Decouple raw queries from vector search by extracting structured filters and intents first.
+- **Hybrid Search:** Combine BM25 lexical search (critical for keyword and date-based constraints) with dense semantic search (for conceptual recall).
+- **Reranking:** Leverage cross-encoders to evaluate absolute relevance of candidates.
+- **Agentic Validation:** Keep LLMs in a self-correcting validation loop until Pydantic schema validation succeeds.
+- **Deterministic Execution:** Maintain controlled state transitions using LangGraph.
 
 ---
 
 ## Project Structure
 
-
+```
 ├── scraper/
-│ └── scraper.py # Academic paper scraping
+│   └── scraper.py              # Academic paper scraping & normalization
 │
 ├── data/
-│ └── cscl_dataset.json # Structured raw dataset
+│   └── cscl_dataset.json       # Structured raw dataset of papers
 │
 ├── data_ingestion/
-│ └── ingestion.py # Chunking + embedding + ChromaDB
+│   └── ingestion.py            # Text chunking, embedding generation & storage
 │
-├── chroma_store/ # Persistent vector store. Not included 
+├── chroma_store/               # Persistent on-disk vector database (ignored in git)
 │
-├── langgraph_agents/ # LangGraph-based agentic workflow
-│ ├── init.py
-│ ├── agents.py # RAG, Generator, Evaluator agents
-│ ├── graph.py # LangGraph construction & routing
-│ ├── graphstate.py # Shared state across nodes
-│ ├── prompts.py # Prompt templates
-│ └── schema.py # Pydantic output schema
+├── langgraph_agents/           # LangGraph-based workflow
+│   ├── __init__.py
+│   ├── agents.py               # RAG, Generator, and Evaluator agents/nodes
+│   ├── graph.py                # Graph building and routing configuration
+│   ├── graphstate.py           # State definition passed across nodes
+│   ├── prompts.py              # Centralized system and correction prompts
+│   └── schema.py               # Pydantic structured output models
 │
-├── agents/ #traditional agents
-│ ├── controller.py # Agent orchestrator
-│ ├── json_creator.py # Structured JSON generator
-│ ├── validator.py # Output verifier
-│ └── schema.py # Pydantic schema
+├── agents/                     # Traditional pipeline components
+│   ├── controller.py           # Plain loops-based orchestrator
+│   ├── json_creator.py         # JSON creation LLM interface
+│   ├── validator.py            # Output validator helper
+│   └── schema.py               # Pydantic schema definition
 │
-├── langgraph_run.py # Main execution Langgraph agents pipeline
-│
-├── run.py # Main execution traditional agents pipeline
-
+├── langgraph_run.py            # Entry point for LangGraph pipeline
+├── run.py                      # Entry point for traditional pipeline
+├── requirements.txt            # Python dependencies
+└── utils.py                    # Utility functions and shared helpers
+```
 
 ---
 
 ## High-Level System Flow
 
-User Query
-↓
-Query Interpreter Agent
-↓
-Context + Date Extraction
-↓
-BM25 Lexical Retrieval
-↓
-Dense Vector Retrieval
-↓
-Cross-Encoder Re-Ranking
-↓
-Best Chunk Selection
-↓
-LangGraph Agentic Workflow
-↓
-Validated Structured JSON Output
-
+```mermaid
+graph TD
+    UserQuery[User Query] --> QI[Query Interpreter Agent]
+    QI --> FilterDate[Extract Context & Date Constraints]
+    FilterDate --> BM25[BM25 Lexical Retrieval]
+    BM25 --> Vector[Dense Vector Retrieval]
+    Vector --> Rerank[Cross-Encoder Re-Ranking]
+    Rerank --> Select[Best Chunk Selection]
+    Select --> Agentic[LangGraph Self-Correction Loop]
+    Agentic --> Final[Validated Structured JSON Output]
+```
 
 ---
 
-## 1. Data Scraping
+## System Components
 
-**Location:** `scraper/scraper.py`
+### 1. Data Scraping
+**Location:** [scraper/scraper.py](file:///Users/amogharora/agentic_rag_system/agentic_rag_system/scraper/scraper.py)
 
-### Description
-- Scrapes **50 academic research papers**
-- Extracts metadata and full content
-- Normalizes results into a structured JSON dataset
+- Scrapes **50 academic research papers** in the domain.
+- Extracts key metadata and raw content.
+- Normalizes output into a structured dataset: `data/cscl_dataset.json`.
 
-### Output
-data/cscl_dataset.json
-
-### Paper Fields
+**Paper schema:**
 - `paper_id`
 - `title`
 - `abstract`
@@ -99,237 +86,114 @@ data/cscl_dataset.json
 - `content`
 - `references`
 
-### Run
+**Run Command:**
+```bash
+python scraper/scraper.py
+```
 
-- python scraper/scraper.py
+---
 
 ### 2. Data Ingestion & Vectorization
-
-Location: data_ingestion/ingestion.py
-
-Description
-
-    Loads the scraped dataset
-
-    Splits long papers into overlapping chunks
-
-    Generates embeddings using Sentence-Transformers
-
-    Stores vectors in ChromaDB with metadata
-
-    Key Features
-
-    Overlapping chunking for context preservation
-
-    Deterministic chunk IDs
-
-    Metadata attached to every vector
-
-    Persistent on-disk vector store
-
-- python data_ingestion/ingestion.py
-3. Query Interpretation Layer (Critical)
-Before retrieval, the raw user query is passed to a Query Interpreter Agent.
-
-Responsibilities
-The interpreter:
-
-    Extracts user intent
-
-    Identifies keywords and entities
-
-    Detects temporal constraints (e.g., recent, after 2021)
-
-    Produces a structured retrieval plan
-
-    Example
-    User Query
-
-
-4. Hybrid Retrieval Pipeline
-    Step 1: BM25 Lexical Retrieval (Primary Filter)
-        Uses BM25 over paper content and metadata
-
-    Enforces:
-
-        Keyword matching
-
-        Date-based filtering
-
-        Domain relevance
-
-        Produces a high-precision candidate set
-
-        This step ensures hard constraints are respected before semantic search.
-
-    Step 2: Dense Vector Retrieval (Bi-Encoder)
-    Query embedded using:
-
-
-        all-MiniLM-L6-v2
-        Cosine similarity search in ChromaDB
-
-        Retrieves top K = 20 chunks
-
-        Optimized for semantic recall
-
-    Step 3: Cross-Encoder Re-Ranking
-    Re-ranks candidates using:
-
-        cross-encoder/ms-marco-MiniLM-L-6-v2
-        Joint query–chunk scoring
-
-        Low-confidence results discarded
-
-        Final best chunk selected
-
-5. LangGraph Agentic Workflow
-Once the best chunk is selected, the system enters a LangGraph-based agentic self-correction loop to guarantee schema-correct structured output.
-
-LangGraph Control Flow
-
-MAX_ATTEMPTS = 3
-
-def router(state):
-    if state["evaluation_errors"] is None:
-        return "end"
-    if state["attempts"] >= MAX_ATTEMPTS:
-        return "end"
-    return "retry"
-Execution graph:
-
-rag → generate → evaluate
-
-On failure → retry generation
-
-On success or max retries → terminate safely
-
-Purpose
-Implements deterministic agent orchestration using LangGraph.
-
-This layer replaces ad-hoc loops with:
-
-Explicit state transitions
-
-Controlled retries
-
-Clear failure boundaries
-
-File Responsibilities
-graphstate.py
-Defines the shared state passed across graph nodes:
-
-    User query
-
-    Interpreted context
-
-    Retrieved documents
-
-    Generated output
-
-    Validation errors
-
-    Attempt counter
-
-agents.py
-Defines core LangGraph nodes:
-
-    RAG Agent – hybrid retrieval execution
-
-    Generator Agent – LLM-based JSON generation
-
-    Evaluator Agent – output validation
-
-    Each agent operates only on shared state.
-
-prompts.py
-Centralized prompt templates for:
-
-    Generation
-
-    Retry correction
-
-    Validation feedback
-
-schema.py
-Defines Pydantic schema for structured output validation.
-
-    class PaperSummary(BaseModel):
-        title: str
-        summary: str
-        complexity_score: int = Field(ge=1, le=10)
-        future_work: str
-graph.py
-Constructs the LangGraph:
-
-    Node definitions
-
-    Execution order
-
-    Conditional routing
-
-    Retry logic
-
-    Safe termination
-
-    This file is the control brain of the system.
-
-6. Structured Output Format
-
-    {
-    "title": "string",
-    "summary": "string",
-    "complexity_score": 1-10,
-    "future_work": "string"
-    }
-    Constraints
-    JSON only
-
-    No markdown
-
-    No explanations
-
-    Strict schema enforcement
-
-7. End-to-End Execution Summary
-    Scrape academic papers
-
-    Ingest and embed content
-
-    Interpret user query into structured intent
-
-    Apply BM25 lexical + date-aware retrieval
-
-    Perform dense semantic retrieval
-
-    Re-rank using cross-encoder
-
-    Select best context
-
-    Run LangGraph agentic validation
-
-    Output reliable structured JSON
-
-Why This Architecture Works
-    Prevents semantic drift
-
-    Respects temporal constraints
-
-    Improves factual grounding
-
-    Guarantees schema safety
-
-    Enables deterministic debugging
-
-    Scales to research-grade workloads
-
-Future Enhancements
-    Adaptive BM25–Dense weighting
-
-    Multi-document synthesis
-
-    Retrieval evaluation metrics (Recall@K, MRR)
-
-    Streaming and async inference
-
-    Production deployment (API + Docker)
+**Location:** [data_ingestion/ingestion.py](file:///Users/amogharora/agentic_rag_system/agentic_rag_system/data_ingestion/ingestion.py)
+
+- Loads the scraped dataset.
+- Splits long papers into overlapping chunks to preserve contextual boundaries.
+- Generates dense semantic embeddings using Sentence-Transformers (`all-MiniLM-L6-v2`).
+- Indexes chunks in `ChromaDB` alongside rich metadata (such as dates, title, and authors).
+
+**Run Command:**
+```bash
+python data_ingestion/ingestion.py
+```
+
+---
+
+### 3. Query Interpretation Layer
+Before searching the vector database, the raw user query is processed by a **Query Interpreter Agent** to identify:
+- Real core intent & target keywords.
+- Temporal bounds (e.g., "published after 2021", "recent advancements").
+- Structured filters for the retrieval stage.
+
+---
+
+### 4. Hybrid Retrieval Pipeline
+1. **BM25 Lexical Retrieval (Primary Filter):** Focuses on strict keyword matching and date filters. Ensures constraints are respected.
+2. **Dense Vector Retrieval (Bi-Encoder):** Searches ChromaDB using cosine similarity to guarantee high semantic recall.
+3. **Cross-Encoder Re-Ranking:** Re-ranks the top 20 retrieved candidates using `cross-encoder/ms-marco-MiniLM-L-6-v2` to select the single highest-scoring chunk.
+
+---
+
+### 5. LangGraph Agentic Workflow
+Once the best context is retrieved, the system uses a LangGraph control loop to guarantee structured, valid schema outputs.
+
+```mermaid
+stateDiagram-v2
+    [*] --> RAG_Agent
+    RAG_Agent --> Generator_Agent
+    Generator_Agent --> Evaluator_Agent
+    Evaluator_Agent --> Route_Check
+    Route_Check --> [*] : Valid Output / Max Attempts Exceeded
+    Route_Check --> Generator_Agent : Invalid Output (Self-Correct)
+```
+
+#### Shared Graph State (`graphstate.py`)
+- `query`: User search topic
+- `date`: Extracted temporal constraints
+- `rag_results`: List of retrieved documents
+- `rag_context`: Best combined text content
+- `generated_json`: Candidate output dict
+- `evaluation_errors`: List of validation errors, if any
+- `attempts`: Counter tracking retries (Max = 3)
+
+#### Execution Nodes (`agents.py`)
+- **RAG Agent:** Performs hybrid query execution.
+- **Generator Agent:** Leverages LLM to create schema-conforming response.
+- **Evaluator Agent:** Validates output structures against the Pydantic schema.
+
+---
+
+### 6. Structured Output Schema
+Outputs strictly adhere to the following structure:
+```json
+{
+  "title": "string",
+  "summary": "string",
+  "complexity_score": 1-10,
+  "future_work": "string"
+}
+```
+
+> [!IMPORTANT]
+> The generator output must be pure JSON with no markdown wrapping, trailing strings, or conversational preambles.
+
+---
+
+## Getting Started
+
+1. **Install Dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. **Configure Environment:**
+   Create a `.env` file and define your API keys:
+   ```env
+   GEMINI_API_KEY=your_gemini_api_key_here
+   ```
+3. **Execution Options:**
+   - Run the traditional controller-based workflow:
+     ```bash
+     python run.py
+     ```
+   - Run the LangGraph-based workflow:
+     ```bash
+     python langgraph_run.py
+     ```
+
+---
+
+## Future Enhancements
+- [ ] Implement adaptive weight calibration between BM25 and Dense search models.
+- [ ] Add support for multi-document synthesis and cross-paper referencing.
+- [ ] Set up automated retrieval metrics tracking (Recall@K, MRR).
+- [ ] Integrate streaming and async execution for faster processing times.
+- [ ] Containerize application via Docker and expose REST APIs.
