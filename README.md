@@ -25,9 +25,30 @@ Once the best context is retrieved, the system uses a LangGraph control loop to 
 - **ComparativeAgent (Literature Review):** When discovering multiple relevant candidate papers, this agent synthesizes a side-by-side matrix comparing methodologies, strengths, limitations, and compute overheads.
 - **AuditAgent (Fact-Checker):** Every generated summary and comparative review is passed through a factual grounding auditor that computes a **Hallucination Score (0-100%)** by cross-referencing generated claims against the raw retrieved ChromaDB chunks.
 
-### 4. Interactive Live UI & PDF Ingestion
-- **Live PDF Ingestion:** A UI modal that allows users to upload custom PDF research papers on the fly, automatically chunking, embedding, and syncing them to the vector store.
-- **React Frontend:** A sleek, user-friendly interface to search for papers, view side-by-side comparisons, interact via multi-turn chat, and monitor live audit validation scores.
+---
+
+## 🔌 FastAPI Backend Endpoints
+
+The backend is built using **FastAPI** (`server.py`), exposing a series of REST endpoints that interface directly with the LangGraph state graph and ChromaDB:
+
+*   **`GET /api/papers`**: Fetches all available research papers currently indexed in the local store.
+*   **`POST /api/search`**: Takes a natural language query and optional date, parses them via the intent extraction agent, and executes the hybrid search pipeline.
+*   **`POST /api/summarize`**: Invokes the LangGraph state machine in `"discover"` mode to produce a schema-safe JSON summary with self-correction and validation.
+*   **`POST /api/compare`**: Invokes LangGraph in `"compare"` mode to synthesize literature reviews across multiple paper IDs.
+*   **`POST /api/chat`**: Performs grounded conversational Q&A against the retrieved text of a selected paper.
+*   **`POST /api/upload_pdf`**: Accepts custom PDF uploads, parses content using `pdfplumber`, splits it into chunks, embeds them, and persists them into the ChromaDB vector database.
+
+---
+
+## 🎨 React Frontend Architecture
+
+The user interface is built on **React (Vite)** with standard styling and modular components designed for research exploration:
+
+*   **`Sidebar.jsx`**: Houses the search filter, paper count, list of available papers, and the "Upload PDF" action trigger.
+*   **`SummaryCard.jsx`**: Displays key findings, complexity score, and future work. Offers a toggle button to view raw JSON outputs.
+*   **`ComparativeMatrix.jsx`**: Dynamically generates a side-by-side matrix table showing methodology, strengths, limitations, and compute overhead for compared papers. It displays a live **Audit Factual Grounding Badge** calculated by the fact-checking agent.
+*   **`ChatWindow.jsx`**: Grounded chat terminal interface that enables users to ask specific questions about the chosen paper in real-time.
+*   **`PdfUploadModal.jsx`**: Modal dialog for handling paper uploads, title, author, and date metadata entries.
 
 ---
 
