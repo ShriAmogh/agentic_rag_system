@@ -18,17 +18,18 @@ import time
 
 import time
 
-models_to_try = ["gemini-3.1-flash-lite", "gemini-3-pro-preview"]
+models_to_try = ["gemini-3.1-flash-lite"]
 
 def call_llm_with_fallback(prompt):
     """
-    Robust LLM caller that handles Gemini API 429 rate limit quota errors
-    by applying exponential backoff and trying valid model endpoints.
+    Robust LLM caller using 'gemini-3.1-flash-lite' with retry & backoff
+    for rate limits (429) and high-demand spikes (503 UNAVAILABLE).
     """
-    for model_name in models_to_try:
+    max_attempts = 4
+    for attempt in range(max_attempts):
         try:
             llm_inst = ChatGoogleGenerativeAI(
-                model=model_name,
+                model="gemini-3.1-flash-lite",
                 temperature=0,
                 max_retries=3,
                 convert_system_message_to_human=True
@@ -36,26 +37,42 @@ def call_llm_with_fallback(prompt):
             return llm_inst.invoke(prompt)
         except Exception as e:
             err_str = str(e)
-            if "RESOURCE_EXHAUSTED" in err_str or "429" in err_str:
-                print(f"Model {model_name} rate limited (429), waiting 4s before next attempt...")
-                time.sleep(4)
+            if any(k in err_str for k in ["RESOURCE_EXHAUSTED", "429", "503", "UNAVAILABLE", "high demand"]):
+                wait_sec = 2 ** (attempt + 1)
+                print(f"Gemini API busy (attempt {attempt+1}/{max_attempts}), retrying in {wait_sec}s...")
+                time.sleep(wait_sec)
                 continue
             raise e
 
-    # Fallback retry with backoff sleep
-    time.sleep(6)
+    # Final attempt
+    time.sleep(4)
     return ChatGoogleGenerativeAI(
         model="gemini-3.1-flash-lite",
         temperature=0,
-        max_retries=6,
+        max_retries=5,
         convert_system_message_to_human=True
     ).invoke(prompt)
 
 def extract_content_text(response) -> str:
-    """Helper to extract text from Langchain response which might return content as a list."""
-    if isinstance(response.content, list):
-        return " ".join(chunk.get("text", "") for chunk in response.content if isinstance(chunk, dict)).strip()
-    return str(response.content).strip()
+    """Helper to extract text from Langchain response which might return content as a list of dicts or objects."""
+    if hasattr(response, "content"):
+        content = response.content
+    else:
+        content = response
+
+    if isinstance(content, list):
+        text_parts = []
+        for chunk in content:
+            if isinstance(chunk, dict):
+                text_parts.append(chunk.get("text", ""))
+            elif isinstance(chunk, str):
+                text_parts.append(chunk)
+            elif hasattr(chunk, "text"):
+                text_parts.append(str(chunk.text))
+            else:
+                text_parts.append(str(chunk))
+        return " ".join(filter(None, text_parts)).strip()
+    return str(content).strip()
 
 
 def extract_intent_and_date(user_prompt: str) -> tuple[str, Optional[str]]:
@@ -125,7 +142,7 @@ def json_generator(state: GraphState):
             )
         )
         return {
-            "response_text": response.content,
+            "response_text": extract_content_text(response),
             "attempts": state["attempts"] + 1
         }
 
