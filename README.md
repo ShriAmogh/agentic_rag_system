@@ -14,10 +14,11 @@ Before searching the vector database, the raw user query is processed by a **Dyn
 - Temporal bounds (e.g., "papers published after 2025", "recent advancements").
 - Structured filters for the retrieval stage.
 
-### 2. Hybrid Retrieval Pipeline
-1. **BM25 Lexical Retrieval (Primary Filter):** Focuses on strict keyword matching and date string prefix filtering. Ensures temporal constraints are respected.
-2. **Dense Vector Retrieval (Bi-Encoder):** Searches ChromaDB using cosine similarity to guarantee high semantic recall.
-3. **Cross-Encoder Re-Ranking:** Re-ranks the top retrieved candidates using `cross-encoder/ms-marco-MiniLM-L-6-v2` to evaluate absolute relevance, selecting the most contextually relevant chunks.
+### 2. Hybrid Retrieval Pipeline (RRF + Neural Cross-Encoder)
+1. **Dense Vector Retrieval (Bi-Encoder):** Searches ChromaDB using embeddings from `all-MiniLM-L6-v2` to guarantee high semantic recall.
+2. **Sparse Keyword Retrieval (BM25Okapi):** Scans the corpus with BM25 to capture exact terminology, technical acronyms, and lexical signals.
+3. **Reciprocal Rank Fusion (RRF):** Fuses dense vector ranks and sparse BM25 ranks via $RRF(d) = \sum \frac{1}{k + rank_i}$ ($k=60$) into a unified, balanced candidate pool.
+4. **Cross-Encoder Neural Re-Ranking:** Re-ranks the top RRF candidate pool using `cross-encoder/ms-marco-MiniLM-L-6-v2` to evaluate fine-grained query-passage cross-attention and filter low-confidence hits.
 
 ### 3. LangGraph Multi-Agent Workflows
 Once the best context is retrieved, the system uses a LangGraph control loop to guarantee structured, valid schema outputs, driven by specialized agents:
@@ -152,8 +153,63 @@ The system implements a resilient `call_llm_with_fallback` function inside `agen
 
 ---
 
+## 📊 Evaluation & Benchmarking Framework
+
+The system includes a production-grade evaluation pipeline covering RAG metrics, agentic workflow unit tests, and LLM safety testing.
+
+### 1. RAG Core Quality Metrics (RAGAS & DeepEval)
+Evaluates end-to-end generation quality against a curated golden dataset (`evaluation/golden_dataset.json`):
+- **Faithfulness:** Is the generated answer strictly grounded in retrieved context?
+- **Answer Relevancy:** Does the answer directly address the user query without irrelevant tangents?
+- **Context Precision:** Signal-to-noise ratio in top retrieved chunks.
+- **Context Recall:** Coverage of ground-truth factual statements.
+- **Answer Correctness:** Factual accuracy compared to expected golden answers.
+- **Citation Accuracy:** Verifies whether cited paper titles/IDs actually substantiate the claims.
+
+Run the evaluation suite:
+```bash
+# Run RAGAS metrics on the golden dataset
+python -m evaluation.run_evaluation --suite ragas --limit 10
+
+# Run DeepEval compliance & hallucination suite
+python -m evaluation.run_evaluation --suite deepeval --limit 10
+
+# Run all suites and output structured JSON + Markdown reports
+python -m evaluation.run_evaluation --suite all
+```
+Reports are automatically saved to `evaluation/reports/`.
+
+### 2. Agentic Workflow Unit & Integration Tests (pytest)
+34 comprehensive tests validating each agent stage independently:
+- **Intent Classifier (`tests/test_intent_agent.py`):** Natural language date constraint parsing and semantic query isolation.
+- **RRF Hybrid Retrieval (`tests/test_search_rrf.py`):** BM25 sparse indexing, vector search, reciprocal rank fusion, and CrossEncoder scoring.
+- **RAG Node (`tests/test_rag_node.py`):** Multi-chunk retrieval, paper ID filtering, and context formatting.
+- **JSON Generator (`tests/test_json_generator.py`):** Schema-aligned generation for discovery and chat modes.
+- **Evaluator Node (`tests/test_evaluator_node.py`):** Pydantic schema validation, constraint checking (`1 <= complexity <= 10`), and retry feedback generation.
+- **Comparative Agent (`tests/test_comparative_node.py`):** Side-by-side literature review matrix generation.
+- **Audit Agent (`tests/test_audit_node.py`):** Factual grounding verification and hallucination detection.
+- **Conditional Routers (`tests/test_conditional_router.py`):** Graph edge transitions, mode switching, and infinite loop protection (`MAX_ATTEMPTS = 3`).
+
+Run the automated test suite:
+```bash
+pytest tests/
+```
+
+### 3. LLM Safety & Adversarial Evaluation (`tests/test_safety.py`)
+Protects against unsafe behavior:
+- **Prompt Injection Defense:** Neutralizes "Ignore previous instructions" patterns inside retrieved context.
+- **Jailbreak Attempt Refusal:** Refuses "DAN" / persona bypass attempts.
+- **PII Leakage Prevention:** Disallows extraction of credentials and private personal data.
+- **Out-of-Scope Fallback:** Gracefully outputs `"I couldn't find enough information in the available documents to answer that confidently."`
+- **Hallucination Auditor:** Catches unsupported assertions with `audit_passed = False`.
+- **Sensitive Document Scoping:** Enforces strict boundary isolation for targeted document queries.
+
+---
+
 ## 🔮 Future Work
-- Implement automated retrieval metrics tracking (Recall@K, MRR) for the hybrid pipeline.
-- Add support for multi-document synthesis and cross-paper referencing inside the chat window.
-- Migrate from local ChromaDB to a cloud-hosted Vector DB for multi-tenant scaling.
-- Dockerize both the FastAPI backend and React frontend into a unified `docker-compose.yml`.
+- **Multi-Document Cross-Referencing in Chat:** Expand multi-turn chat to support simultaneous contextual referencing across multiple candidate papers rather than single-paper scoping.
+- **Automated Golden Dataset Expansion:** Continuous synthetic question-ground-truth generation with active-learning feedback from user queries.
+- **CI/CD Regression Benchmarking:** Integrate RAGAS & DeepEval quality score assertions into GitHub Actions workflows to block pull requests that degrade faithfulness or relevancy thresholds.
+- **Enterprise Vector DB Migration:** Transition from local persistent ChromaDB to distributed, managed vector infrastructure (such as Pinecone, Qdrant, or pgvector) for horizontal scaling and multi-tenancy.
+- **Streaming Agent Responses:** Implement server-sent events (SSE) or WebSockets in FastAPI and React for real-time streaming tokens and agent state progress updates.
+- **Containerization & Deployment:** Dockerize both the FastAPI backend and React frontend into an optimized multi-stage `docker-compose.yml` for unified production deployment.
