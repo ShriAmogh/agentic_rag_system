@@ -13,3 +13,8 @@ langgraph
 langchain-core
 IPython
 langchain_google_genai
+rank-bm25
+ragas
+pytest
+pytest-mock
+
