@@ -15,7 +15,7 @@ import pypdf
 load_dotenv()
 
 # Pre-load heavy models at module import for minimum request latency
-from rag.search import collection, embedding_model, cross_encoder_model, hybrid_search
+from rag.search import collection, embedding_model, cross_encoder_model, hybrid_search, bm25_retriever
 from langgraph_agents.graph import app as langgraph_app
 from data_ingestion.ingestion import chunk_text
 
@@ -176,6 +176,17 @@ def chat_paper(req: ChatRequest):
         })
 
         response_text = result.get("response_text", "No response generated.")
+        if isinstance(response_text, list):
+            parts = []
+            for item in response_text:
+                if isinstance(item, dict):
+                    parts.append(item.get("text", str(item)))
+                else:
+                    parts.append(str(item))
+            response_text = " ".join(parts).strip()
+        elif not isinstance(response_text, str):
+            response_text = str(response_text)
+
         return {
             "response": response_text,
             "audit_report": result.get("audit_result")
@@ -272,6 +283,7 @@ async def upload_pdf(
             embeddings=embeddings,
             metadatas=metadatas
         )
+        bm25_retriever.refresh()
 
         # Update cscl_dataset.json if exists
         new_paper_obj = {
