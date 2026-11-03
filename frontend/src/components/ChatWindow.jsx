@@ -17,13 +17,14 @@ export default function ChatWindow({ selectedPaper, onBackToSearch }) {
 
   // Reset messages when active paper changes
   useEffect(() => {
+    const title = selectedPaper?.title || 'the selected paper';
     setMessages([
       {
         role: 'assistant',
-        content: `Hello! I am ready to answer any questions about the paper **"${selectedPaper.title}"**. What would you like to know?`
+        content: `Hello! I am ready to answer any questions about the paper **"${title}"**. What would you like to know?`
       }
     ]);
-  }, [selectedPaper.paper_id]);
+  }, [selectedPaper?.paper_id]);
 
   const handleSend = async (e) => {
     e.preventDefault();
@@ -40,14 +41,17 @@ export default function ChatWindow({ selectedPaper, onBackToSearch }) {
       // Build history payload (excluding initial system greeting if any)
       const historyPayload = newHistory
         .filter((m, idx) => idx > 0)
-        .map((m) => ({ role: m.role, content: m.content }));
+        .map((m) => ({
+          role: m.role,
+          content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
+        }));
 
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           query: userText,
-          paper_id: selectedPaper.paper_id,
+          paper_id: selectedPaper?.paper_id || '',
           history: historyPayload
         })
       });
@@ -57,7 +61,18 @@ export default function ChatWindow({ selectedPaper, onBackToSearch }) {
         throw new Error(data.detail || 'Chat request failed.');
       }
 
-      setMessages((prev) => [...prev, { role: 'assistant', content: data.response }]);
+      let content = data.response;
+      if (typeof content !== 'string') {
+        if (Array.isArray(content)) {
+          content = content.map((c) => (typeof c === 'object' ? c.text || JSON.stringify(c) : String(c))).join('\n');
+        } else if (typeof content === 'object' && content !== null) {
+          content = content.text || JSON.stringify(content, null, 2);
+        } else {
+          content = String(content || 'No response generated.');
+        }
+      }
+
+      setMessages((prev) => [...prev, { role: 'assistant', content }]);
     } catch (err) {
       setMessages((prev) => [
         ...prev,
@@ -153,9 +168,10 @@ export default function ChatWindow({ selectedPaper, onBackToSearch }) {
                 color: isUser ? '#ffffff' : 'var(--text-main)',
                 fontSize: '0.9rem',
                 lineHeight: '1.5',
-                border: isUser ? 'none' : '1px solid var(--border-glass)'
+                border: isUser ? 'none' : '1px solid var(--border-glass)',
+                whiteSpace: 'pre-wrap'
               }}>
-                {msg.content}
+                {typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content, null, 2)}
               </div>
 
               {isUser && (
