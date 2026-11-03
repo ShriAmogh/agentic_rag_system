@@ -18,7 +18,7 @@ def format_rag_context(results: list[dict]) -> str:
                 [Paper {i}]
                 Title: {r['metadata'].get('title', 'Unknown')}
                 Year: {r['metadata'].get('submission_date', 'Unknown')}
-                Re-rank score: {r['rerank_score']}
+                Re-rank score: {r.get('rerank_score', 'N/A')}
 
                 Content:
                 {r['document']}
