@@ -1,0 +1,32 @@
+{
+  "timestamp": "2026-11-03T17:06:18.087766",
+  "suite": "ragas",
+  "sample_count": 1,
+  "ragas_report": {
+    "total_samples": 1,
+    "mean_faithfulness": 0.4,
+    "mean_answer_relevancy": 0.5,
+    "mean_context_precision": 0.1,
+    "mean_context_recall": 0.1,
+    "mean_answer_correctness": 0.8,
+    "mean_citation_accuracy": 0.9,
+    "overall_rag_score": 0.4667,
+    "samples": [
+      {
+        "sample_id": "gold_01",
+        "question": "What is the primary objective of Generative Adversarial Reasoner and how does it address process errors in LLMs?",
+        "ground_truth": "Generative Adversarial Reasoner (GAR) enhances LLM reasoning using adversarial reinforcement learning. It addresses process errors such as incorrect calculations, brittle logic, and superficially plausible but invalid steps by pitting a reasoning generator against an adversary.",
+        "generated_answer": "Error running pipeline: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}",
+        "retrieved_contexts": [],
+        "retrieved_sources": [],
+        "faithfulness": 0.4,
+        "answer_relevancy": 0.5,
+        "context_precision": 0.1,
+        "context_recall": 0.1,
+        "answer_correctness": 0.8,
+        "citation_accuracy": 0.9,
+        "feedback": "Fallback scoring evaluated (LLM judge error: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high deman)"
+      }
+    ]
+  }
+}
